@@ -1,4 +1,4 @@
-name: cet_4
+name: Salintinig
 description: "A new Flutter project."
 publish_to: 'none'
 
@@ -10,18 +10,20 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  sqflite: ^2.3.0
   cupertino_icons: ^1.0.8
   http: ^1.5.0
   audioplayers: ^6.5.1
-  record: ^6.1.2
   google_fonts: ^6.3.2
   google_mlkit_language_id: ^0.13.0
   google_mlkit_translation: ^0.13.0
   permission_handler: ^12.0.1
   whisper_flutter_new: ^1.0.1
-  path_provider: ^2.1.1
   camera: ^0.11.0
   google_mlkit_text_recognition: ^0.15.1
+  record: ^5.2.0
+  path_provider: ^2.1.2
+  speech_to_text: ^6.6.2
 
 dev_dependencies:
   flutter_test:

@@ -2,8 +2,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:audioplayers/audioplayers.dart'; 
 import 'ocr_scanner.dart';
 import 'language_switcher.dart';
+import 'recording_overlay.dart';
 
 void main() {
   runApp(const SalintinigApp());
@@ -94,9 +96,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
     setState(() {
       _messages.insert(0, {
-        "originalText": text, // The text exactly as typed
-        "text": text,         // Placeholder for the translated result
-        "imagePath": null,
+        "isAudio": false,
+        "originalText": text,
+        "text": text,
         "from": _sourceLang,
         "to": _targetLang,
         "time": TimeOfDay.now().format(context),
@@ -108,11 +110,21 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _onMicPressed() async {
     final status = await Permission.microphone.request();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(status.isGranted 
-          ? 'Listening in $_sourceLang...' 
-          : 'Microphone permission denied')),
-    );
+
+    if (status.isGranted) {
+      RecordingOverlay.show(context, onStop: (filePath, transcript) {
+        setState(() {
+          _messages.insert(0, {
+            "isAudio": true,
+            "audioPath": filePath,
+            "originalText": transcript.isNotEmpty ? transcript : "Voice Recording",
+            "text": "Voice Message",
+            "to": _targetLang,
+            "time": TimeOfDay.now().format(context),
+          });
+        });
+      });
+    }
   }
 
   Future<void> _onCameraPressed() async {
@@ -128,6 +140,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (path != null) {
         setState(() {
           _messages.insert(0, {
+            "isAudio": false,
             "imagePath": path,
             "originalText": "Image Captured",
             "text": "Scanning $_sourceLang text...",
@@ -156,35 +169,24 @@ class _ChatScreenState extends State<ChatScreen> {
               style: GoogleFonts.anton(fontSize: 22, color: Colors.black)),
           ],
         ),
-        actions: [
-          IconButton(onPressed: () {}, icon: const Icon(Icons.history, color: Colors.black)),
-          const SizedBox(width: 8),
-        ],
       ),
       body: Column(
         children: [
           Expanded(
             child: _messages.isEmpty
-                ? Center(
-                    child: Text('Start translating $_sourceLang to $_targetLang', 
-                    style: const TextStyle(color: Colors.grey)))
+                ? const Center(child: Text('Start translating...', style: TextStyle(color: Colors.grey)))
                 : ListView.builder(
                     padding: const EdgeInsets.all(16),
                     itemCount: _messages.length,
                     reverse: true,
-                    itemBuilder: (context, index) {
-                      final msg = _messages[index];
-                      return _buildChatBubble(msg);
-                    },
+                    itemBuilder: (context, index) => _buildChatBubble(_messages[index]),
                   ),
           ),
-
           LanguageSwitcher(
             sourceLang: _sourceLang,
             targetLang: _targetLang,
             onSwap: _swapLanguages,
           ),
-
           _buildInputBar(),
         ],
       ),
@@ -192,6 +194,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildChatBubble(Map<String, dynamic> msg) {
+    final bool isAudio = msg["isAudio"] ?? false;
+
     return Align(
       alignment: Alignment.centerRight,
       child: Container(
@@ -205,13 +209,10 @@ class _ChatScreenState extends State<ChatScreen> {
             bottomRight: Radius.circular(16),
           ),
         ),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.8
-        ),
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Display Image if it exists
             if (msg["imagePath"] != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8.0),
@@ -220,46 +221,24 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: Image.file(File(msg["imagePath"])),
                 ),
               ),
-            
-            // NEW: Show the original typed text (italicized)
             if (msg["originalText"] != null)
-              Text(
-                "Original: ${msg["originalText"]}",
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.5),
-                  fontSize: 12,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            
+              Text("Original: ${msg["originalText"]}",
+                style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11, fontStyle: FontStyle.italic)),
             const SizedBox(height: 4),
-
-            // Display the main translated text
-            Text(msg["text"] ?? "", 
-              style: const TextStyle(
-                color: Colors.white, 
-                fontSize: 17, 
-                fontWeight: FontWeight.w500
-              )),
+            
+            // CONTENT AREA
+            if (isAudio) 
+              _buildAudioPlayerUI(msg["audioPath"]) 
+            else 
+              Text(msg["text"] ?? "", style: const TextStyle(color: Colors.white, fontSize: 16)),
             
             const SizedBox(height: 6),
-
-            // Language labels and timestamp
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text("${msg["from"]} ➔ ${msg["to"]}", 
-                  style: TextStyle(
-                    color: Colors.redAccent.shade100, 
-                    fontSize: 10, 
-                    fontWeight: FontWeight.bold
-                  )),
+                Text("${msg["from"]} ➔ ${msg["to"]}", style: const TextStyle(color: Colors.redAccent, fontSize: 10, fontWeight: FontWeight.bold)),
                 const SizedBox(width: 8),
-                Text(msg["time"], 
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.5), 
-                    fontSize: 10
-                  )),
+                Text(msg["time"], style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 10)),
               ],
             ),
           ],
@@ -268,54 +247,68 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Widget _buildAudioPlayerUI(String? path) {
+    if (path == null) return const Text("Audio file missing", style: TextStyle(color: Colors.white));
+    
+    // We create a single player instance for this bubble
+    final AudioPlayer audioPlayer = AudioPlayer();
+
+    return StatefulBuilder(
+      builder: (context, setBubbleState) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            StreamBuilder<PlayerState>(
+              stream: audioPlayer.onPlayerStateChanged,
+              builder: (context, snapshot) {
+                final playerState = snapshot.data;
+                final bool isPlaying = playerState == PlayerState.playing;
+
+                return IconButton(
+                  icon: Icon(
+                    isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                    color: Colors.white,
+                    size: 38,
+                  ),
+                  onPressed: () async {
+                    if (isPlaying) {
+                      await audioPlayer.pause();
+                    } else {
+                      await audioPlayer.play(DeviceFileSource(path));
+                    }
+                  },
+                );
+              },
+            ),
+            const Text("Voice Message", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildInputBar() {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 20, left: 16, right: 16),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.circular(40),
-        ),
+        decoration: BoxDecoration(color: const Color(0xFF1A1A1A), borderRadius: BorderRadius.circular(40)),
         child: Row(
           children: [
             Expanded(
               child: Container(
                 height: 48,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        style: const TextStyle(color: Colors.black),
-                        decoration: InputDecoration(
-                          hintText: "Type in $_sourceLang...",
-                          border: InputBorder.none,
-                        ),
-                        onSubmitted: (_) => _sendMessage(),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.send_rounded, color: Color(0xFFB71C1C)),
-                      onPressed: _sendMessage,
-                    ),
-                  ],
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(30)),
+                child: TextField(
+                  controller: _controller,
+                  decoration: InputDecoration(hintText: "Type in $_sourceLang...", border: InputBorder.none),
+                  onSubmitted: (_) => _sendMessage(),
                 ),
               ),
             ),
-            IconButton(
-              icon: const Icon(Icons.mic_none_rounded, color: Colors.white),
-              onPressed: _onMicPressed,
-            ),
-            IconButton(
-              icon: const Icon(Icons.camera_alt_outlined, color: Colors.white),
-              onPressed: _onCameraPressed,
-            ),
+            IconButton(icon: const Icon(Icons.mic_none_rounded, color: Colors.white), onPressed: _onMicPressed),
+            IconButton(icon: const Icon(Icons.camera_alt_outlined, color: Colors.white), onPressed: _onCameraPressed),
           ],
         ),
       ),
