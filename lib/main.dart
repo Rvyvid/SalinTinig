@@ -6,9 +6,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'ocr_scanner.dart';
 import 'language_switcher.dart';
 import 'recording_overlay.dart';
-//changes: imports for feedback function:
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'feedback.dart';
 
 void main() {
   runApp(const SalintinigApp());
@@ -93,136 +91,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
   final List<Map<String, dynamic>> _messages = [];
 
-  //changes: variables for feedback function:
-  final TextEditingController _feedbackEmailController =
-      TextEditingController();
-  final TextEditingController _feedbackSubjectController =
-      TextEditingController();
-  final TextEditingController _feedbackContentController =
-      TextEditingController();
-  bool _isSendingFeedback = false;
-  //end of changes for feedback function
-
   String _sourceLang = "Tagalog";
   String _targetLang = "Cebuano";
-
-  //changes: void homescreen function for feedback modal:
-  void _showFeedbackModal() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setStateModal) {
-            return AlertDialog(
-              backgroundColor: const Color(0xFF1A1A1A),
-              title: const Text(
-                'Send Feedback',
-                style: TextStyle(color: Colors.white),
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: _feedbackEmailController,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
-                        labelText: 'Your Email Address',
-                        labelStyle: TextStyle(color: Colors.grey),
-                        enabledBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(color: Colors.grey),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _feedbackSubjectController,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
-                        labelText: 'Subject',
-                        labelStyle: TextStyle(color: Colors.grey),
-                        enabledBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(color: Colors.grey),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _feedbackContentController,
-                      maxLines: 4,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
-                        labelText: 'Feedback Content',
-                        labelStyle: TextStyle(color: Colors.grey),
-                        enabledBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(color: Colors.grey),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text(
-                    'Cancel',
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                  onPressed: _isSendingFeedback
-                      ? null
-                      : () async {
-                          setStateModal(() => _isSendingFeedback = true);
-                          try {
-                            await _sendFeedbackEmail();
-                            if (!mounted) return;
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Feedback sent!')),
-                            );
-                          } catch (e) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Error: $e'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                            Navigator.pop(context);
-                          } finally {
-                            setStateModal(() => _isSendingFeedback = false);
-                          }
-                        },
-                  child: _isSendingFeedback
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Text(
-                          'Send',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    ).then((_) {
-      // Clear controllers when modal closes
-      _feedbackEmailController.clear();
-      _feedbackSubjectController.clear();
-      _feedbackContentController.clear();
-    });
-  }
-  //end of changes for feedback function
 
   void _swapLanguages() {
     setState(() {
@@ -248,54 +118,6 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     _controller.clear();
   }
-
-  //changes: actual network call for feedback:
-  Future<void> _sendFeedbackEmail() async {
-    final String userEmail = _feedbackEmailController.text.trim();
-    final String subject = _feedbackSubjectController.text.trim();
-    final String message = _feedbackContentController.text.trim();
-
-    if (userEmail.isEmpty || subject.isEmpty || message.isEmpty) return;
-
-    // Replace these with your actual EmailJS credentials
-    const String serviceId = 'service_rde8rx8';
-    const String templateId = 'template_y46xtxl';
-    const String userId = 'lxUF7C4z-EjiJhgZ8';
-
-    final url = Uri.parse('https://api.emailjs.com/api/v1.0/email/send');
-
-    try {
-      final response = await http
-          .post(
-            url,
-            headers: {'Content-Type': 'application/json'},
-            body: json.encode({
-              'service_id': serviceId,
-              'template_id': templateId,
-              'user_id': userId,
-              'template_params': {
-                'user_email': userEmail,
-                'subject': subject,
-                'message': message,
-              },
-            }),
-          )
-          .timeout(const Duration(seconds: 10));
-
-      debugPrint('EmailJS Response Status: ${response.statusCode}');
-      debugPrint('EmailJS Response Body: ${response.body}');
-
-      if (response.statusCode != 200) {
-        throw Exception(
-          'Failed to send email: ${response.statusCode} - ${response.body}',
-        );
-      }
-    } catch (e) {
-      debugPrint('Error sending feedback: $e');
-      rethrow;
-    }
-  }
-  //end of changes
 
   Future<void> _onMicPressed() async {
     final status = await Permission.microphone.request();
@@ -369,7 +191,7 @@ class _ChatScreenState extends State<ChatScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.feedback_outlined, color: Colors.black),
-            onPressed: _showFeedbackModal,
+            onPressed: () => showFeedbackModal(context),
             tooltip: 'Send Feedback',
           ),
           const SizedBox(width: 8),
