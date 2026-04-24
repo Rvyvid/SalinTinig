@@ -7,6 +7,7 @@ import 'ocr_scanner.dart';
 import 'language_switcher.dart';
 import 'recording_overlay.dart';
 import 'feedback.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // Add this import
 
 void main() {
   runApp(const SalintinigApp());
@@ -253,7 +254,14 @@ class _ChatScreenState extends State<ChatScreen> {
                 padding: const EdgeInsets.only(bottom: 8.0),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.file(File(msg["imagePath"])),
+                  // child: Image.file(File(msg["imagePath"])),
+                  child: kIsWeb
+                      ? Image.network(
+                          msg["imagePath"],
+                        ) // Use network for blob URLs
+                      : Image.file(
+                          File(msg["imagePath"]),
+                        ), // Keep file for Android
                 ),
               ),
             if (msg["originalText"] != null)
@@ -334,11 +342,26 @@ class _ChatScreenState extends State<ChatScreen> {
                     color: Colors.white,
                     size: 38,
                   ),
+                  // onPressed: () async {
+                  //   if (isPlaying) {
+                  //     await audioPlayer.pause();
+                  //   } else {
+                  //     await audioPlayer.play(DeviceFileSource(path));
+                  //   }
+                  // },
                   onPressed: () async {
                     if (isPlaying) {
                       await audioPlayer.pause();
                     } else {
-                      await audioPlayer.play(DeviceFileSource(path));
+                      if (kIsWeb ||
+                          path.startsWith('http') ||
+                          path.startsWith('blob:')) {
+                        // Use UrlSource for Web Blobs or Network paths
+                        await audioPlayer.play(UrlSource(path));
+                      } else {
+                        // Use DeviceFileSource for local mobile files
+                        await audioPlayer.play(DeviceFileSource(path));
+                      }
                     }
                   },
                 );
