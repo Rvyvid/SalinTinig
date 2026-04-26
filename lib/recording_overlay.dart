@@ -5,7 +5,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:speech_to_text/speech_to_text.dart'; // New Import
 
 class RecordingOverlay {
-  static void show(BuildContext context, {required Function(String path, String transcript) onStop}) {
+  static void show(
+    BuildContext context, {
+    required Function(String? path, String transcript) onStop,
+  }) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -16,7 +19,7 @@ class RecordingOverlay {
 }
 
 class _RecordingSheet extends StatefulWidget {
-  final Function(String path, String transcript) onStop;
+  final Function(String? path, String transcript) onStop;
   const _RecordingSheet({required this.onStop});
 
   @override
@@ -26,7 +29,7 @@ class _RecordingSheet extends StatefulWidget {
 class _RecordingSheetState extends State<_RecordingSheet> {
   late AudioRecorder _audioRecorder;
   final SpeechToText _speechToText = SpeechToText(); // STT Instance
-  
+
   Timer? _timer;
   int _seconds = 0;
   String _wordsSpoken = ""; // To store transcription
@@ -48,25 +51,42 @@ class _RecordingSheetState extends State<_RecordingSheet> {
   void _startRecording() async {
     try {
       // Check for both microphone and speech permissions
+      // if (await _audioRecorder.hasPermission() && _speechEnabled) {
+      //   final dir = await getApplicationDocumentsDirectory();
+      //   final path = '${dir.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+      //changes: add && _speechEnabled to the condition later for restoring STT
       if (await _audioRecorder.hasPermission() && _speechEnabled) {
-        final dir = await getApplicationDocumentsDirectory();
-        final path = '${dir.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
-        
+        // await Future.delayed(const Duration(milliseconds: 1000));
+        String? path;
+
+        if (!kIsWeb) {
+          // Mobile/Desktop behavior: Save to a specific local directory
+          final dir = await getApplicationDocumentsDirectory();
+          path = '${dir.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        }
+
         // 1. Start Audio File Recording
         await _audioRecorder.start(
-          const RecordConfig(encoder: AudioEncoder.aacLc), 
-          path: path
+          const RecordConfig(
+            encoder: AudioEncoder.wav,
+            numChannels: 1,
+            sampleRate: 16000,
+          ),
+          path: path ?? '', // Pass empty string for Web
         );
 
         // 2. Start Speech to Text
         await _speechToText.listen(
           onResult: (result) {
-            setState(() {
-              _wordsSpoken = result.recognizedWords;
-            });
+            if (mounted) {
+              setState(() {
+                _wordsSpoken = result.recognizedWords;
+              });
+            }
           },
         );
-        
+
         _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
           if (mounted) setState(() => _seconds++);
         });
@@ -77,9 +97,9 @@ class _RecordingSheetState extends State<_RecordingSheet> {
   }
 
   void _stopAndSend() async {
-    final path = await _audioRecorder.stop();
     await _speechToText.stop(); // Stop STT
-    
+    final String? path = await _audioRecorder.stop();
+
     _timer?.cancel();
     if (path != null) {
       widget.onStop(path, _wordsSpoken); // Return both path and text
@@ -118,14 +138,24 @@ class _RecordingSheetState extends State<_RecordingSheet> {
       height: 350, // Increased height for text preview
       decoration: const BoxDecoration(
         color: Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.only(topLeft: Radius.circular(30), topRight: Radius.circular(30)),
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(30),
+          topRight: Radius.circular(30),
+        ),
       ),
       child: Column(
         children: [
           const SizedBox(height: 12),
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
           const SizedBox(height: 20),
-          
+
           // Live Transcription Preview
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -134,19 +164,30 @@ class _RecordingSheetState extends State<_RecordingSheet> {
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white70, fontSize: 16, fontStyle: FontStyle.italic),
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 16,
+                fontStyle: FontStyle.italic,
+              ),
             ),
           ),
-          
+
           const Spacer(),
           const Icon(Icons.mic, color: Colors.redAccent, size: 48),
           const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: [ 
+            children: [
               const Icon(Icons.graphic_eq, color: Colors.redAccent, size: 28),
               const SizedBox(width: 12),
-              Text(_formatTime(_seconds), style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w300)),
+              Text(
+                _formatTime(_seconds),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 32,
+                  fontWeight: FontWeight.w300,
+                ),
+              ),
             ],
           ),
           const Spacer(),
@@ -155,13 +196,27 @@ class _RecordingSheetState extends State<_RecordingSheet> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                IconButton(icon: const Icon(Icons.refresh, color: Colors.white, size: 32), onPressed: _reset),
+                IconButton(
+                  icon: const Icon(
+                    Icons.refresh,
+                    color: Colors.white,
+                    size: 32,
+                  ),
+                  onPressed: _reset,
+                ),
                 GestureDetector(
                   onTap: _stopAndSend,
                   child: Container(
                     padding: const EdgeInsets.all(12),
-                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                    child: const Icon(Icons.send_rounded, color: Color(0xFFB71C1C), size: 30),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.send_rounded,
+                      color: Color(0xFFB71C1C),
+                      size: 30,
+                    ),
                   ),
                 ),
               ],

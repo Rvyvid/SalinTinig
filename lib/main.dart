@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // Add this import
 import 'ocr_scanner.dart';
 import 'language_switcher.dart';
 import 'recording_overlay.dart';
 import 'feedback.dart';
+import 'ble_detector.dart'; // New Import for BLE Detection
 
 void main() {
   runApp(const SalintinigApp());
@@ -34,25 +36,97 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
+// class _HomeScreenState extends State<HomeScreen> {
+//   @override
+//   void initState() {
+//     super.initState();
+//     _connectBleAndNavigate();
+//   }
+
+//   Future<void> _connectBleAndNavigate() async {
+//     // Attempt BLE connection
+//     bool connected = await autoConnectToSalintinigDevice(context);
+
+//     if (!mounted) return;
+
+//     // If connection successful or after timeout, navigate to ChatScreen
+//     Navigator.of(
+//       context,
+//     ).pushReplacement(MaterialPageRoute(builder: (_) => const ChatScreen()));
+//   }
+
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       backgroundColor: const Color(0xFFD9D9D9),
+//       body: Center(
+//         child: Column(
+//           mainAxisSize: MainAxisSize.min,
+//           children: [
+//             Text(
+//               'SALINTINIG',
+//               style: GoogleFonts.anton(
+//                 fontSize: 42,
+//                 letterSpacing: 2,
+//                 color: Colors.black,
+//               ),
+//             ),
+//             const SizedBox(height: 24),
+//             const CircularProgressIndicator(
+//               strokeWidth: 3,
+//               color: Colors.black,
+//             ),
+//             const SizedBox(height: 16),
+//             const Text(
+//               'Loading Translator...',
+//               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+//             ),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+// }
+
 class _HomeScreenState extends State<HomeScreen> {
+  bool _isConnecting = false;
+
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (!mounted) return;
-      Navigator.of(
-        context,
-      ).pushReplacement(MaterialPageRoute(builder: (_) => const ChatScreen()));
+    // ❌ REMOVE auto-connect from here.
+    // Web browsers will block this because there was no user click.
+  }
+
+  // ✅ Create a function to be called by a button press
+  Future<void> _handleConnectButtonPress() async {
+    setState(() {
+      _isConnecting = true;
     });
+
+    // This is now legally a "user gesture" to the browser
+    bool success = await autoConnectToSalintinigDevice(context);
+
+    if (success && mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const ChatScreen()),
+      );
+    } else {
+      setState(() {
+        _isConnecting = false;
+      });
+      // A snackbar is already handled in your ble_detector.dart for failures,
+      // but we reset the loading state here.
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFD9D9D9),
+      backgroundColor: const Color(0xFFD9D9D9), // Matching your theme
       body: Center(
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
               'SALINTINIG',
@@ -63,15 +137,27 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            const CircularProgressIndicator(
-              strokeWidth: 3,
-              color: Colors.black,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Loading Translator...',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-            ),
+            // Show a loading spinner if connecting, otherwise show the button
+            _isConnecting
+                ? const CircularProgressIndicator(color: Colors.white)
+                : ElevatedButton.icon(
+                    onPressed:
+                        _handleConnectButtonPress, // The critical user gesture
+                    icon: const Icon(Icons.bluetooth),
+                    label: const Text("Connect Salintinig Earphones"),
+                    style: ElevatedButton.styleFrom(
+                      foregroundColor: Colors.red.shade700,
+                      backgroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
           ],
         ),
       ),
