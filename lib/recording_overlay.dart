@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:speech_to_text/speech_to_text.dart'; // New Import
-import 'package:flutter/foundation.dart' show kIsWeb; //add this for web check
+import 'package:flutter/foundation.dart' show kIsWeb; // Add this import
 
 class RecordingOverlay {
   static void show(
     BuildContext context, {
-    required Function(String path, String transcript) onStop,
+    required Function(String? path, String transcript) onStop,
   }) {
     showModalBottomSheet(
       context: context,
@@ -20,7 +20,7 @@ class RecordingOverlay {
 }
 
 class _RecordingSheet extends StatefulWidget {
-  final Function(String path, String transcript) onStop;
+  final Function(String? path, String transcript) onStop;
   const _RecordingSheet({required this.onStop});
 
   @override
@@ -55,7 +55,10 @@ class _RecordingSheetState extends State<_RecordingSheet> {
       // if (await _audioRecorder.hasPermission() && _speechEnabled) {
       //   final dir = await getApplicationDocumentsDirectory();
       //   final path = '${dir.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+      //changes: add && _speechEnabled to the condition later for restoring STT
       if (await _audioRecorder.hasPermission() && _speechEnabled) {
+        // await Future.delayed(const Duration(milliseconds: 1000));
         String? path;
 
         if (!kIsWeb) {
@@ -70,16 +73,22 @@ class _RecordingSheetState extends State<_RecordingSheet> {
         //   path: path,
         // );
         await _audioRecorder.start(
-          const RecordConfig(encoder: AudioEncoder.aacLc),
+          const RecordConfig(
+            encoder: AudioEncoder.wav,
+            numChannels: 1,
+            sampleRate: 16000,
+          ),
           path: path ?? '', // Pass empty string for Web
         );
 
         // 2. Start Speech to Text
         await _speechToText.listen(
           onResult: (result) {
-            setState(() {
-              _wordsSpoken = result.recognizedWords;
-            });
+            if (mounted) {
+              setState(() {
+                _wordsSpoken = result.recognizedWords;
+              });
+            }
           },
         );
 
@@ -93,8 +102,8 @@ class _RecordingSheetState extends State<_RecordingSheet> {
   }
 
   void _stopAndSend() async {
-    final path = await _audioRecorder.stop();
     await _speechToText.stop(); // Stop STT
+    final String? path = await _audioRecorder.stop();
 
     _timer?.cancel();
     if (path != null) {

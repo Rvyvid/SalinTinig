@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:image_picker/image_picker.dart';
+import 'dart:async';
+import 'dart:io';
 
 class OCRScannerScreen extends StatefulWidget {
   const OCRScannerScreen({super.key});
@@ -12,29 +16,74 @@ class OCRScannerScreen extends StatefulWidget {
 class _OCRScannerScreenState extends State<OCRScannerScreen> {
   CameraController? _controller;
   bool _isInitialized = false;
+  final ImagePicker _imagePicker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
-    _setupCamera();
+    if (!kIsWeb) {
+      // Only initialize camera on mobile platforms
+      _setupCamera();
+    }
   }
 
   Future<void> _setupCamera() async {
-    final cameras = await availableCameras();
-    if (cameras.isEmpty) return;
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        debugPrint("No cameras found");
+        return;
+      }
 
-    _controller = CameraController(cameras[0], ResolutionPreset.high);
-    await _controller!.initialize();
-    if (!mounted) return;
-    setState(() => _isInitialized = true);
+      _controller = CameraController(
+        cameras[0],
+        ResolutionPreset.max,
+        enableAudio: false,
+      );
+
+      await _controller!.initialize();
+
+      if (!mounted) return;
+      setState(() => _isInitialized = true);
+      debugPrint(
+        "Camera initialized successfully: ${_controller!.description.name}",
+      );
+    } catch (e) {
+      debugPrint("Camera Setup Error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Camera Error: $e")));
+      }
+    }
   }
 
-  // --- ADD THIS FUNCTION HERE ---
+  /// Web: Pick image from file picker / camera
+  Future<void> _pickImageForWeb() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 100,
+      );
+
+      if (image != null && mounted) {
+        Navigator.pop(context, image.path);
+      }
+    } catch (e) {
+      debugPrint("Error picking image: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      }
+    }
+  }
+
+  /// Mobile: Take photo using camera
   Future<void> _takePhoto() async {
     if (_controller == null || !_controller!.value.isInitialized) return;
 
     try {
-      // 1. Capture the photo
       final XFile image = await _controller!.takePicture();
 
       // 2. Return the file path back to main.dart
@@ -54,12 +103,98 @@ class _OCRScannerScreenState extends State<OCRScannerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Web version: Simple file picker UI
+    if (kIsWeb) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Column(
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(
+                        Icons.arrow_back_ios_new,
+                        color: Colors.black,
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    Text(
+                      'BACK',
+                      style: GoogleFonts.anton(
+                        fontSize: 28,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Content
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 10),
+                        padding: const EdgeInsets.all(40),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1A1A1A),
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                        child: Column(
+                          children: [
+                            const Icon(
+                              Icons.camera_alt,
+                              color: Colors.white,
+                              size: 60,
+                            ),
+                            const SizedBox(height: 20),
+                            Text(
+                              'Capture or Upload Image',
+                              style: GoogleFonts.anton(
+                                fontSize: 18,
+                                color: Colors.white,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                            const SizedBox(height: 30),
+                            ElevatedButton.icon(
+                              onPressed: _pickImageForWeb,
+                              icon: const Icon(Icons.camera_alt),
+                              label: const Text('Take Photo'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFB71C1C),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 30,
+                                  vertical: 15,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Mobile version: Live camera UI
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(
           children: [
-            // --- Header ---
+            // Header
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Row(
@@ -78,8 +213,7 @@ class _OCRScannerScreenState extends State<OCRScannerScreen> {
                 ],
               ),
             ),
-
-            // --- Camera Viewport ---
+            // Camera Viewport
             Expanded(
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 10),
@@ -92,15 +226,17 @@ class _OCRScannerScreenState extends State<OCRScannerScreen> {
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      if (_isInitialized) CameraPreview(_controller!),
-
+                      if (_isInitialized)
+                        CameraPreview(_controller!)
+                      else
+                        const Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        ),
                       const ScannerOverlay(),
-
-                      // --- UPDATED SHUTTER BUTTON ---
                       Positioned(
                         bottom: 30,
                         child: GestureDetector(
-                          onTap: _takePhoto, // <--- CHANGE THIS LINE
+                          onTap: _takePhoto,
                           child: Container(
                             padding: const EdgeInsets.all(4),
                             decoration: BoxDecoration(

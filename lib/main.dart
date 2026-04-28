@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -13,6 +14,8 @@ import 'recording_overlay.dart';
 import 'feedback.dart';
 import 'package:flutter/foundation.dart' show kIsWeb; // Add this import
 import 'api_config.dart';
+import 'ble_detector.dart';
+import 'package:audio_session/audio_session.dart';
 
 void main() {
   runApp(const SalintinigApp());
@@ -33,6 +36,7 @@ class SalintinigApp extends StatelessWidget {
 }
 
 // =================== HOME SCREEN (Splash) ===================
+//changes: added button for establishing BLE connection
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -41,14 +45,29 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  bool _isConnecting = false;
+
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const ChatScreen()));
+  }
+
+  Future<void> _handleConnectButtonPress() async {
+    setState(() {
+      _isConnecting = true;
     });
+
+    bool success = await autoConnectToSalintinigDevice(context);
+
+    if (success && mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const ChatScreen()),
+      );
+    } else {
+      setState(() {
+        _isConnecting = false;
+      });
+    }
   }
 
   @override
@@ -57,14 +76,52 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: const Color(0xFFD9D9D9),
       body: Center(
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('SALINTINIG',
-                style:
-                    GoogleFonts.anton(fontSize: 42, color: Colors.black)),
+            Text(
+              'SALINTINIG',
+              style: GoogleFonts.anton(
+                fontSize: 42,
+                letterSpacing: 2,
+                color: Colors.black,
+              ),
+            ),
+            Text(
+              'Real-time Filipino Translator',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.openSans(
+                fontSize: 18,
+                letterSpacing: 2,
+                color: Colors.black,
+              ),
+            ),
+            Text(
+              '\nHow to Connect:'
+              '\n1. Turn on your Salintinig Earphones'
+              '\n2. Connect your device to "Salintinig Device" via Bluetooth'
+              '\n3. Tap the button below to connect to the service!',
+              style: GoogleFonts.openSans(fontSize: 16, color: Colors.black54),
+            ),
             const SizedBox(height: 24),
-            const CircularProgressIndicator(
-                strokeWidth: 3, color: Colors.black),
+            _isConnecting
+                ? const CircularProgressIndicator(color: Colors.white)
+                : ElevatedButton.icon(
+                    onPressed: _handleConnectButtonPress,
+                    icon: const Icon(Icons.bluetooth, color: Colors.blue),
+                    label: const Text("Connect Salintinig Earphones"),
+                    style: ElevatedButton.styleFrom(
+                      foregroundColor: Colors.black,
+                      backgroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
           ],
         ),
       ),
@@ -114,8 +171,9 @@ class _ChatScreenState extends State<ChatScreen> {
       // WaveNet-A and WaveNet-C are distinct enough to feel different
       // between Tagalog and "Cebuano" outputs.
       const String languageCode = "fil-PH";
-      final String voiceName =
-          isCebuano ? "fil-PH-Wavenet-C" : "fil-PH-Wavenet-A";
+      final String voiceName = isCebuano
+          ? "fil-PH-Wavenet-C"
+          : "fil-PH-Wavenet-A";
 
       // Cebuano is spoken slightly faster with a higher pitch than Tagalog.
       // These values nudge the Filipino voice toward a Cebuano-like cadence.
@@ -124,7 +182,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
       final response = await http.post(
         Uri.parse(
-            "https://texttospeech.googleapis.com/v1/text:synthesize?key=${ApiConfig.ttsApiKey}"),
+          "https://texttospeech.googleapis.com/v1/text:synthesize?key=${ApiConfig.ttsApiKey}",
+        ),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "input": {"text": text},
@@ -157,6 +216,57 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  // For BLE button controls
+  StreamSubscription<int>? _buttonSub;
+
+  //changes for BLE application
+  @override
+  void initState() {
+    super.initState();
+    _requestAudioFocus();
+    startBleListener(
+      context,
+      onExitApp: () {
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
+            (Route<dynamic> route) => false,
+          );
+        }
+      },
+    );
+
+    // Listen to hardware button presses
+    _buttonSub = salintinigButtonStream.stream.listen((eventCode) {
+      if (!mounted) return;
+      setState(() {
+        if (eventCode == 1) {
+          _sourceLang = "Tagalog";
+          _targetLang = "Cebuano";
+        } else if (eventCode == 2) {
+          _sourceLang = "Cebuano";
+          _targetLang = "Tagalog";
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Switched to $_sourceLang ➔ $_targetLang'),
+          duration: const Duration(seconds: 1),
+          backgroundColor: Colors.black87,
+        ),
+      );
+    });
+  }
+
+  // @override
+  // void dispose() {
+  //   _buttonSub?.cancel(); // cancel BLE button subscription
+  //   stopBleListener();
+  //   _controller.dispose();
+  //   super.dispose();
+  // }
+  //end changes for BLE application
+
   void _swapLanguages() {
     setState(() {
       final temp = _sourceLang;
@@ -181,6 +291,18 @@ class _ChatScreenState extends State<ChatScreen> {
     _controller.clear();
   }
 
+  Future<void> _requestAudioFocus() async {
+    try {
+      final session = await AudioSession.instance;
+      // Configuring as "speech" strictly pauses background media apps
+      await session.configure(const AudioSessionConfiguration.speech());
+      await session.setActive(true);
+      debugPrint("Audio session activated. Background media paused.");
+    } catch (e) {
+      debugPrint("Failed to set audio session: $e");
+    }
+  }
+
   Future<void> _onMicPressed() async {
     final status = await Permission.microphone.request();
     if (status.isGranted) {
@@ -191,8 +313,9 @@ class _ChatScreenState extends State<ChatScreen> {
             _messages.insert(0, {
               "isAudio": true,
               "audioPath": filePath,
-              "originalText":
-                  transcript.isNotEmpty ? transcript : "Voice Recording",
+              "originalText": transcript.isNotEmpty
+                  ? transcript
+                  : "Voice Recording",
               "text": "Voice Message",
               "to": _targetLang,
               "from": _sourceLang,
@@ -229,6 +352,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    //changes: joined dispose
+    _buttonSub?.cancel(); // cancel BLE button subscription
+    stopBleListener();
+    _controller.dispose();
     _ttsPlayer.dispose();
     _controller.dispose();
     super.dispose();
@@ -246,8 +373,10 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             const Icon(Icons.translate, color: Colors.black),
             const SizedBox(width: 12),
-            Text('SALINTINIG',
-                style: GoogleFonts.anton(fontSize: 22, color: Colors.black)),
+            Text(
+              'SALINTINIG',
+              style: GoogleFonts.anton(fontSize: 22, color: Colors.black),
+            ),
           ],
         ),
         actions: [
@@ -297,7 +426,8 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
         constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.8),
+          maxWidth: MediaQuery.of(context).size.width * 0.8,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -306,38 +436,56 @@ class _ChatScreenState extends State<ChatScreen> {
                 padding: const EdgeInsets.only(bottom: 8.0),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  // child: Image.file(File(msg["imagePath"])),
                   child: kIsWeb
                       ? Image.network(
                           msg["imagePath"],
-                        ) // Use network for blob URLs
-                      : Image.file(
-                          File(msg["imagePath"]),
-                        ), // Keep file for Android
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Icon(
+                                Icons.broken_image,
+                                color: Colors.white,
+                              ),
+                        )
+                      : Image.file(File(msg["imagePath"])),
                 ),
               ),
-            Text(
-              "Original: ${msg["originalText"]}",
-              style: TextStyle(
-                  color: Colors.white.withOpacity(0.5), fontSize: 11),
-            ),
+            if (msg["originalText"] != null)
+              Text(
+                "Original: ${msg["originalText"]}",
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.5),
+                  fontSize: 11,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            const SizedBox(height: 4),
+
+            // CONTENT AREA
+            if (isAudio)
+              _buildAudioPlayerUI(msg["audioPath"])
+            else
+              Text(
+                msg["text"] ?? "",
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+              ),
+
+            const SizedBox(height: 6),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Expanded(
                   child: isAudio
-                      ? _buildAudioPlayerUI(
-                          msg["audioPath"] as String?)
+                      ? _buildAudioPlayerUI(msg["audioPath"] as String?)
                       : Text(
                           msg["text"] ?? "",
                           style: const TextStyle(
-                              color: Colors.white, fontSize: 16),
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
                         ),
                 ),
                 if (!isAudio)
                   IconButton(
-                    icon: const Icon(Icons.volume_up,
-                        color: Colors.redAccent),
+                    icon: const Icon(Icons.volume_up, color: Colors.redAccent),
                     onPressed: () =>
                         _speak(msg["text"] as String, msg["to"] as String),
                   ),
@@ -345,8 +493,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             Text(
               "${msg["from"]} ➔ ${msg["to"]} • ${msg["time"]}",
-              style:
-                  const TextStyle(color: Colors.redAccent, fontSize: 10),
+              style: const TextStyle(color: Colors.redAccent, fontSize: 10),
             ),
           ],
         ),
@@ -356,11 +503,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildAudioPlayerUI(String? path) {
     if (path == null) {
-      return const Text("Audio Error",
-          style: TextStyle(color: Colors.white));
+      return const Text("Audio Error", style: TextStyle(color: Colors.white));
     }
 
-    // We create a single player instance for this bubble
     final AudioPlayer audioPlayer = AudioPlayer();
 
     return StatefulBuilder(
@@ -426,8 +571,9 @@ class _ChatScreenState extends State<ChatScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(40)),
+          color: const Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(40),
+        ),
         child: Row(
           children: [
             Expanded(
@@ -435,8 +581,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 height: 48,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(30)),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(30),
+                ),
                 child: TextField(
                   controller: _controller,
                   decoration: InputDecoration(
@@ -452,8 +599,7 @@ class _ChatScreenState extends State<ChatScreen> {
               onPressed: _onMicPressed,
             ),
             IconButton(
-              icon:
-                  const Icon(Icons.camera_alt_outlined, color: Colors.white),
+              icon: const Icon(Icons.camera_alt_outlined, color: Colors.white),
               onPressed: _onCameraPressed,
             ),
           ],
