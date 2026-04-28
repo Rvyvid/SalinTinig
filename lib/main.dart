@@ -258,13 +258,13 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  @override
-  void dispose() {
-    _buttonSub?.cancel(); // cancel BLE button subscription
-    stopBleListener();
-    _controller.dispose();
-    super.dispose();
-  }
+  // @override
+  // void dispose() {
+  //   _buttonSub?.cancel(); // cancel BLE button subscription
+  //   stopBleListener();
+  //   _controller.dispose();
+  //   super.dispose();
+  // }
   //end changes for BLE application
 
   void _swapLanguages() {
@@ -352,6 +352,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    //changes: joined dispose
+    _buttonSub?.cancel(); // cancel BLE button subscription
+    stopBleListener();
+    _controller.dispose();
     _ttsPlayer.dispose();
     _controller.dispose();
     super.dispose();
