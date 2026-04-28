@@ -18,7 +18,6 @@ dependencies:
   google_mlkit_language_id: ^0.13.0
   google_mlkit_translation: ^0.13.0
   permission_handler: ^12.0.1
-  whisper_flutter_new: ^1.0.1
   camera: ^0.11.0
   google_mlkit_text_recognition: ^0.15.1
   record: ^5.2.0
