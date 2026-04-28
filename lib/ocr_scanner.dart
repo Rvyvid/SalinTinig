@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-
 class OCRScannerScreen extends StatefulWidget {
   const OCRScannerScreen({super.key});
 
@@ -37,10 +36,10 @@ class _OCRScannerScreenState extends State<OCRScannerScreen> {
     try {
       // 1. Capture the photo
       final XFile image = await _controller!.takePicture();
-      
+
       // 2. Return the file path back to main.dart
       if (mounted) {
-        Navigator.pop(context, image.path); 
+        Navigator.pop(context, image.path);
       }
     } catch (e) {
       debugPrint("Error capturing photo: $e");
@@ -66,7 +65,10 @@ class _OCRScannerScreenState extends State<OCRScannerScreen> {
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black),
+                    icon: const Icon(
+                      Icons.arrow_back_ios_new,
+                      color: Colors.black,
+                    ),
                     onPressed: () => Navigator.pop(context),
                   ),
                   Text(
@@ -76,7 +78,7 @@ class _OCRScannerScreenState extends State<OCRScannerScreen> {
                 ],
               ),
             ),
-            
+
             // --- Camera Viewport ---
             Expanded(
               child: Container(
@@ -91,7 +93,7 @@ class _OCRScannerScreenState extends State<OCRScannerScreen> {
                     alignment: Alignment.center,
                     children: [
                       if (_isInitialized) CameraPreview(_controller!),
-                      
+
                       const ScannerOverlay(),
 
                       // --- UPDATED SHUTTER BUTTON ---
@@ -108,7 +110,11 @@ class _OCRScannerScreenState extends State<OCRScannerScreen> {
                             child: const CircleAvatar(
                               radius: 30,
                               backgroundColor: Colors.white,
-                              child: Icon(Icons.camera_alt, color: Color(0xFFB71C1C), size: 30),
+                              child: Icon(
+                                Icons.camera_alt,
+                                color: Color(0xFFB71C1C),
+                                size: 30,
+                              ),
                             ),
                           ),
                         ),
@@ -124,7 +130,8 @@ class _OCRScannerScreenState extends State<OCRScannerScreen> {
       ),
     );
   }
-}// Custom widget to draw the brackets from your image
+} // Custom widget to draw the brackets from your image
+
 class ScannerOverlay extends StatelessWidget {
   const ScannerOverlay({super.key});
 
@@ -155,16 +162,26 @@ class ScannerOverlay extends StatelessWidget {
         height: 60,
         decoration: BoxDecoration(
           border: Border(
-            top: top ? const BorderSide(color: Colors.white, width: 4) : BorderSide.none,
-            bottom: !top ? const BorderSide(color: Colors.white, width: 4) : BorderSide.none,
-            left: left ? const BorderSide(color: Colors.white, width: 4) : BorderSide.none,
-            right: !left ? const BorderSide(color: Colors.white, width: 4) : BorderSide.none,
+            top: top
+                ? const BorderSide(color: Colors.white, width: 4)
+                : BorderSide.none,
+            bottom: !top
+                ? const BorderSide(color: Colors.white, width: 4)
+                : BorderSide.none,
+            left: left
+                ? const BorderSide(color: Colors.white, width: 4)
+                : BorderSide.none,
+            right: !left
+                ? const BorderSide(color: Colors.white, width: 4)
+                : BorderSide.none,
           ),
           borderRadius: BorderRadius.only(
             topLeft: top && left ? const Radius.circular(20) : Radius.zero,
             topRight: top && !left ? const Radius.circular(20) : Radius.zero,
             bottomLeft: !top && left ? const Radius.circular(20) : Radius.zero,
-            bottomRight: !top && !left ? const Radius.circular(20) : Radius.zero,
+            bottomRight: !top && !left
+                ? const Radius.circular(20)
+                : Radius.zero,
           ),
         ),
       ),

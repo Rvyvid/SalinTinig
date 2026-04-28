@@ -11,6 +11,7 @@ import 'ocr_scanner.dart';
 import 'language_switcher.dart';
 import 'recording_overlay.dart';
 import 'feedback.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // Add this import
 import 'api_config.dart';
 
 void main() {
@@ -305,7 +306,14 @@ class _ChatScreenState extends State<ChatScreen> {
                 padding: const EdgeInsets.only(bottom: 8.0),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.file(File(msg["imagePath"] as String)),
+                  // child: Image.file(File(msg["imagePath"])),
+                  child: kIsWeb
+                      ? Image.network(
+                          msg["imagePath"],
+                        ) // Use network for blob URLs
+                      : Image.file(
+                          File(msg["imagePath"]),
+                        ), // Keep file for Android
                 ),
               ),
             Text(
@@ -351,18 +359,64 @@ class _ChatScreenState extends State<ChatScreen> {
       return const Text("Audio Error",
           style: TextStyle(color: Colors.white));
     }
-    return Row(
-      children: [
-        IconButton(
-          icon: const Icon(Icons.play_circle_fill, color: Colors.white),
-          onPressed: () async {
-            await _ttsPlayer.stop();
-            await _ttsPlayer.play(DeviceFileSource(path));
-          },
-        ),
-        const Text("Voice Recording",
-            style: TextStyle(color: Colors.white)),
-      ],
+
+    // We create a single player instance for this bubble
+    final AudioPlayer audioPlayer = AudioPlayer();
+
+    return StatefulBuilder(
+      builder: (context, setBubbleState) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            StreamBuilder<PlayerState>(
+              stream: audioPlayer.onPlayerStateChanged,
+              builder: (context, snapshot) {
+                final playerState = snapshot.data;
+                final bool isPlaying = playerState == PlayerState.playing;
+
+                return IconButton(
+                  icon: Icon(
+                    isPlaying
+                        ? Icons.pause_circle_filled
+                        : Icons.play_circle_fill,
+                    color: Colors.white,
+                    size: 38,
+                  ),
+                  // onPressed: () async {
+                  //   if (isPlaying) {
+                  //     await audioPlayer.pause();
+                  //   } else {
+                  //     await audioPlayer.play(DeviceFileSource(path));
+                  //   }
+                  // },
+                  onPressed: () async {
+                    if (isPlaying) {
+                      await audioPlayer.pause();
+                    } else {
+                      if (kIsWeb ||
+                          path.startsWith('http') ||
+                          path.startsWith('blob:')) {
+                        // Use UrlSource for Web Blobs or Network paths
+                        await audioPlayer.play(UrlSource(path));
+                      } else {
+                        // Use DeviceFileSource for local mobile files
+                        await audioPlayer.play(DeviceFileSource(path));
+                      }
+                    }
+                  },
+                );
+              },
+            ),
+            const Text(
+              "Voice Message",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
