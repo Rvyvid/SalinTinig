@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:speech_to_text/speech_to_text.dart'; // New Import
+import 'package:flutter/foundation.dart' show kIsWeb; // Add this import
 
 class RecordingOverlay {
   static void show(

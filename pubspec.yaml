@@ -28,6 +28,8 @@ dependencies:
   image_picker: ^1.0.0
   # ... changes: added flutter_blue_plus for BLE detection and connection
   flutter_blue_plus: ^1.31.0
+  # ... added audio_session for better audio management
+  audio_session: ^0.2.3
 
 dev_dependencies:
   flutter_test:

@@ -264,9 +264,8 @@ class _OCRScannerScreenState extends State<OCRScannerScreen> {
       ),
     );
   }
-}
+} // Custom widget to draw the brackets from your image
 
-// Custom widget to draw the brackets from your image
 class ScannerOverlay extends StatelessWidget {
   const ScannerOverlay({super.key});
 

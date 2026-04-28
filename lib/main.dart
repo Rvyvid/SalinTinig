@@ -1,14 +1,16 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter/foundation.dart' show kIsWeb; // Add this import
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'ocr_scanner.dart';
 import 'language_switcher.dart';
 import 'recording_overlay.dart';
 import 'feedback.dart';
-import 'ble_detector.dart'; // New Import for BLE Detection
+import 'ble_detector.dart';
+import 'package:audio_session/audio_session.dart';
 
 void main() {
   runApp(const SalintinigApp());
@@ -29,6 +31,7 @@ class SalintinigApp extends StatelessWidget {
 }
 
 // =================== HOME SCREEN (Splash) ===================
+//changes: added button for establishing BLE connection
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -36,75 +39,19 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-// class _HomeScreenState extends State<HomeScreen> {
-//   @override
-//   void initState() {
-//     super.initState();
-//     _connectBleAndNavigate();
-//   }
-
-//   Future<void> _connectBleAndNavigate() async {
-//     // Attempt BLE connection
-//     bool connected = await autoConnectToSalintinigDevice(context);
-
-//     if (!mounted) return;
-
-//     // If connection successful or after timeout, navigate to ChatScreen
-//     Navigator.of(
-//       context,
-//     ).pushReplacement(MaterialPageRoute(builder: (_) => const ChatScreen()));
-//   }
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       backgroundColor: const Color(0xFFD9D9D9),
-//       body: Center(
-//         child: Column(
-//           mainAxisSize: MainAxisSize.min,
-//           children: [
-//             Text(
-//               'SALINTINIG',
-//               style: GoogleFonts.anton(
-//                 fontSize: 42,
-//                 letterSpacing: 2,
-//                 color: Colors.black,
-//               ),
-//             ),
-//             const SizedBox(height: 24),
-//             const CircularProgressIndicator(
-//               strokeWidth: 3,
-//               color: Colors.black,
-//             ),
-//             const SizedBox(height: 16),
-//             const Text(
-//               'Loading Translator...',
-//               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-//             ),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-// }
-
 class _HomeScreenState extends State<HomeScreen> {
   bool _isConnecting = false;
 
   @override
   void initState() {
     super.initState();
-    // ❌ REMOVE auto-connect from here.
-    // Web browsers will block this because there was no user click.
   }
 
-  // ✅ Create a function to be called by a button press
   Future<void> _handleConnectButtonPress() async {
     setState(() {
       _isConnecting = true;
     });
 
-    // This is now legally a "user gesture" to the browser
     bool success = await autoConnectToSalintinigDevice(context);
 
     if (success && mounted) {
@@ -115,15 +62,13 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _isConnecting = false;
       });
-      // A snackbar is already handled in your ble_detector.dart for failures,
-      // but we reset the loading state here.
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFD9D9D9), // Matching your theme
+      backgroundColor: const Color(0xFFD9D9D9),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -137,12 +82,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            // Show a loading spinner if connecting, otherwise show the button
             _isConnecting
                 ? const CircularProgressIndicator(color: Colors.white)
                 : ElevatedButton.icon(
-                    onPressed:
-                        _handleConnectButtonPress, // The critical user gesture
+                    onPressed: _handleConnectButtonPress,
                     icon: const Icon(Icons.bluetooth),
                     label: const Text("Connect Salintinig Earphones"),
                     style: ElevatedButton.styleFrom(
@@ -180,6 +123,57 @@ class _ChatScreenState extends State<ChatScreen> {
   String _sourceLang = "Tagalog";
   String _targetLang = "Cebuano";
 
+  // For BLE button controls
+  StreamSubscription<int>? _buttonSub;
+
+  //changes for BLE application
+  @override
+  void initState() {
+    super.initState();
+    _requestAudioFocus();
+    startBleListener(
+      context,
+      onExitApp: () {
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
+            (Route<dynamic> route) => false,
+          );
+        }
+      },
+    );
+
+    // Listen to hardware button presses
+    _buttonSub = salintinigButtonStream.stream.listen((eventCode) {
+      if (!mounted) return;
+      setState(() {
+        if (eventCode == 1) {
+          _sourceLang = "Tagalog";
+          _targetLang = "Cebuano";
+        } else if (eventCode == 2) {
+          _sourceLang = "Cebuano";
+          _targetLang = "Tagalog";
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Switched to $_sourceLang ➔ $_targetLang'),
+          duration: const Duration(seconds: 1),
+          backgroundColor: Colors.black87,
+        ),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _buttonSub?.cancel(); // cancel BLE button subscription
+    stopBleListener();
+    _controller.dispose();
+    super.dispose();
+  }
+  //end changes for BLE application
+
   void _swapLanguages() {
     setState(() {
       final temp = _sourceLang;
@@ -203,6 +197,18 @@ class _ChatScreenState extends State<ChatScreen> {
       });
     });
     _controller.clear();
+  }
+
+  Future<void> _requestAudioFocus() async {
+    try {
+      final session = await AudioSession.instance;
+      // Configuring as "speech" strictly pauses background media apps
+      await session.configure(const AudioSessionConfiguration.speech());
+      await session.setActive(true);
+      debugPrint("Audio session activated. Background media paused.");
+    } catch (e) {
+      debugPrint("Failed to set audio session: $e");
+    }
   }
 
   Future<void> _onMicPressed() async {
@@ -339,7 +345,16 @@ class _ChatScreenState extends State<ChatScreen> {
                 padding: const EdgeInsets.only(bottom: 8.0),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.file(File(msg["imagePath"])),
+                  child: kIsWeb
+                      ? Image.network(
+                          msg["imagePath"],
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Icon(
+                                Icons.broken_image,
+                                color: Colors.white,
+                              ),
+                        )
+                      : Image.file(File(msg["imagePath"])),
                 ),
               ),
             if (msg["originalText"] != null)
@@ -398,7 +413,6 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
 
-    // We create a single player instance for this bubble
     final AudioPlayer audioPlayer = AudioPlayer();
 
     return StatefulBuilder(
