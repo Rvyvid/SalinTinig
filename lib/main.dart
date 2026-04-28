@@ -81,15 +81,31 @@ class _HomeScreenState extends State<HomeScreen> {
                 color: Colors.black,
               ),
             ),
+            Text(
+              'Real-time Filipino Translator',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.openSans(
+                fontSize: 18,
+                letterSpacing: 2,
+                color: Colors.black,
+              ),
+            ),
+            Text(
+              '\nHow to Connect:'
+              '\n1. Turn on your Salintinig Earphones'
+              '\n2. Connect your device to "Salintinig Device" via Bluetooth'
+              '\n3. Tap the button below to connect to the service!',
+              style: GoogleFonts.openSans(fontSize: 16, color: Colors.black54),
+            ),
             const SizedBox(height: 24),
             _isConnecting
                 ? const CircularProgressIndicator(color: Colors.white)
                 : ElevatedButton.icon(
                     onPressed: _handleConnectButtonPress,
-                    icon: const Icon(Icons.bluetooth),
+                    icon: const Icon(Icons.bluetooth, color: Colors.blue),
                     label: const Text("Connect Salintinig Earphones"),
                     style: ElevatedButton.styleFrom(
-                      foregroundColor: Colors.red.shade700,
+                      foregroundColor: Colors.black,
                       backgroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 24,
