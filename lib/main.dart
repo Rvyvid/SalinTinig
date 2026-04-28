@@ -1,14 +1,19 @@
 import 'dart:io';
+import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:http/http.dart' as http;
+
+// Your local imports
 import 'ocr_scanner.dart';
 import 'language_switcher.dart';
 import 'recording_overlay.dart';
 import 'feedback.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // Add this import
+import 'api_config.dart';
 import 'ble_detector.dart';
 import 'package:audio_session/audio_session.dart';
 
@@ -135,9 +140,81 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
   final List<Map<String, dynamic>> _messages = [];
+  final AudioPlayer _ttsPlayer = AudioPlayer();
 
   String _sourceLang = "Tagalog";
   String _targetLang = "Cebuano";
+
+  // -------------------------------------------------------
+  // TTS — FIXED
+  //
+  // Root causes of the original stiff/broken audio:
+  //  1. "fil-PH-Neural2-A"  → Neural2 does NOT exist for Filipino.
+  //     Google silently falls back to Standard (the robotic one).
+  //     Fix → use WaveNet, which is the best voice actually available.
+  //
+  //  2. "ceb-PH-Standard-A" → Google TTS has ZERO Cebuano voices.
+  //     The language code itself is unsupported, so the request 400s.
+  //     Fix → use fil-PH WaveNet (closest proxy) with a different
+  //     voice variant + small pitch/rate offset to hint at Cebuano.
+  //
+  //  3. No _ttsPlayer.stop() before play → audio overlap on rapid taps.
+  // -------------------------------------------------------
+  Future<void> _speak(String text, String langName) async {
+    if (text.isEmpty) return;
+    try {
+      final String lang = langName.trim().toLowerCase();
+      final bool isCebuano = lang.contains("cebuano");
+
+      // Google TTS has no Cebuano voice at all.
+      // fil-PH WaveNet is the best available approximation.
+      // WaveNet-A and WaveNet-C are distinct enough to feel different
+      // between Tagalog and "Cebuano" outputs.
+      const String languageCode = "fil-PH";
+      final String voiceName = isCebuano
+          ? "fil-PH-Wavenet-C"
+          : "fil-PH-Wavenet-A";
+
+      // Cebuano is spoken slightly faster with a higher pitch than Tagalog.
+      // These values nudge the Filipino voice toward a Cebuano-like cadence.
+      final double pitch = isCebuano ? 1.5 : 0.0;
+      final double speakingRate = isCebuano ? 1.05 : 0.92;
+
+      final response = await http.post(
+        Uri.parse(
+          "https://texttospeech.googleapis.com/v1/text:synthesize?key=${ApiConfig.ttsApiKey}",
+        ),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "input": {"text": text},
+          "voice": {
+            "languageCode": languageCode,
+            "name": voiceName,
+            "ssmlGender": "FEMALE",
+          },
+          "audioConfig": {
+            "audioEncoding": "MP3",
+            "pitch": pitch,
+            "speakingRate": speakingRate,
+            // Adds warmth and reduces the "flat studio" TTS feel
+            "effectsProfileId": ["headphone-class-device"],
+          },
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        final bytes = base64Decode(body['audioContent'] as String);
+        // Stop previous playback before starting new one
+        await _ttsPlayer.stop();
+        await _ttsPlayer.play(BytesSource(bytes));
+      } else {
+        debugPrint("TTS API Error ${response.statusCode}: ${response.body}");
+      }
+    } catch (e) {
+      debugPrint("TTS Execution Error: $e");
+    }
+  }
 
   // For BLE button controls
   StreamSubscription<int>? _buttonSub;
@@ -201,7 +278,6 @@ class _ChatScreenState extends State<ChatScreen> {
   void _sendMessage() {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
-
     setState(() {
       _messages.insert(0, {
         "isAudio": false,
@@ -229,8 +305,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _onMicPressed() async {
     final status = await Permission.microphone.request();
-    if (!mounted) return;
-
     if (status.isGranted) {
       RecordingOverlay.show(
         context,
@@ -244,6 +318,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   : "Voice Recording",
               "text": "Voice Message",
               "to": _targetLang,
+              "from": _sourceLang,
               "time": TimeOfDay.now().format(context),
             });
           });
@@ -254,14 +329,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _onCameraPressed() async {
     final status = await Permission.camera.request();
-    if (!mounted) return;
-
     if (status.isGranted) {
       final String? path = await Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => const OCRScannerScreen()),
       );
-
       if (path != null) {
         setState(() {
           _messages.insert(0, {
@@ -276,6 +348,13 @@ class _ChatScreenState extends State<ChatScreen> {
         });
       }
     }
+  }
+
+  @override
+  void dispose() {
+    _ttsPlayer.dispose();
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
@@ -300,21 +379,14 @@ class _ChatScreenState extends State<ChatScreen> {
           IconButton(
             icon: const Icon(Icons.feedback_outlined, color: Colors.black),
             onPressed: () => showFeedbackModal(context),
-            tooltip: 'Send Feedback',
           ),
-          const SizedBox(width: 8),
         ],
       ),
       body: Column(
         children: [
           Expanded(
             child: _messages.isEmpty
-                ? const Center(
-                    child: Text(
-                      'Start translating...',
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  )
+                ? const Center(child: Text('Start translating...'))
                 : ListView.builder(
                     padding: const EdgeInsets.all(16),
                     itemCount: _messages.length,
@@ -336,7 +408,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildChatBubble(Map<String, dynamic> msg) {
     final bool isAudio = msg["isAudio"] ?? false;
-
     return Align(
       alignment: Alignment.centerRight,
       child: Container(
@@ -397,23 +468,28 @@ class _ChatScreenState extends State<ChatScreen> {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  "${msg["from"]} ➔ ${msg["to"]}",
-                  style: const TextStyle(
-                    color: Colors.redAccent,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
+                Expanded(
+                  child: isAudio
+                      ? _buildAudioPlayerUI(msg["audioPath"] as String?)
+                      : Text(
+                          msg["text"] ?? "",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
+                        ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  msg["time"],
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.4),
-                    fontSize: 10,
+                if (!isAudio)
+                  IconButton(
+                    icon: const Icon(Icons.volume_up, color: Colors.redAccent),
+                    onPressed: () =>
+                        _speak(msg["text"] as String, msg["to"] as String),
                   ),
-                ),
               ],
+            ),
+            Text(
+              "${msg["from"]} ➔ ${msg["to"]} • ${msg["time"]}",
+              style: const TextStyle(color: Colors.redAccent, fontSize: 10),
             ),
           ],
         ),
@@ -423,10 +499,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildAudioPlayerUI(String? path) {
     if (path == null) {
-      return const Text(
-        "Audio file missing",
-        style: TextStyle(color: Colors.white),
-      );
+      return const Text("Audio Error", style: TextStyle(color: Colors.white));
     }
 
     final AudioPlayer audioPlayer = AudioPlayer();
@@ -450,11 +523,26 @@ class _ChatScreenState extends State<ChatScreen> {
                     color: Colors.white,
                     size: 38,
                   ),
+                  // onPressed: () async {
+                  //   if (isPlaying) {
+                  //     await audioPlayer.pause();
+                  //   } else {
+                  //     await audioPlayer.play(DeviceFileSource(path));
+                  //   }
+                  // },
                   onPressed: () async {
                     if (isPlaying) {
                       await audioPlayer.pause();
                     } else {
-                      await audioPlayer.play(DeviceFileSource(path));
+                      if (kIsWeb ||
+                          path.startsWith('http') ||
+                          path.startsWith('blob:')) {
+                        // Use UrlSource for Web Blobs or Network paths
+                        await audioPlayer.play(UrlSource(path));
+                      } else {
+                        // Use DeviceFileSource for local mobile files
+                        await audioPlayer.play(DeviceFileSource(path));
+                      }
                     }
                   },
                 );

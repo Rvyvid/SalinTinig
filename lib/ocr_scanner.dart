@@ -85,6 +85,8 @@ class _OCRScannerScreenState extends State<OCRScannerScreen> {
 
     try {
       final XFile image = await _controller!.takePicture();
+
+      // 2. Return the file path back to main.dart
       if (mounted) {
         Navigator.pop(context, image.path);
       }

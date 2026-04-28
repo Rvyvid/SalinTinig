@@ -68,6 +68,10 @@ class _RecordingSheetState extends State<_RecordingSheet> {
         }
 
         // 1. Start Audio File Recording
+        // await _audioRecorder.start(
+        //   const RecordConfig(encoder: AudioEncoder.aacLc),
+        //   path: path,
+        // );
         await _audioRecorder.start(
           const RecordConfig(
             encoder: AudioEncoder.wav,
